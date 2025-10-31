@@ -1,0 +1,8 @@
+filelock
+passlib[bcrypt]
+cryptography
+keyring
+reportlab
+openpyxl
+pillow
+tkcalendar

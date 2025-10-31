@@ -1,0 +1,8 @@
+Files to include in the ZIP
+
+run_afmdw.bat (launcher)
+install_afmdw.ps1 (installer that creates venv, installs requirements, writes run_afmdw.bat, sets AFMDW_SHARED_DIR and creates Startup shortcut)
+create_startup_shortcut.ps1 (create Startup .lnk)
+create_schtask.ps1 (optional: create scheduled task)
+requirements.txt
+README.md (instructions to zip and upload)
