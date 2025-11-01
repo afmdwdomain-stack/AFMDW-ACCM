@@ -41,19 +41,6 @@ from pathlib import Path
 from typing import Optional, Dict
 from email.message import EmailMessage
 
-# Optional reportlab imports for PDF generation
-try:
-    from reportlab.pdfgen import canvas
-    from reportlab.lib.pagesizes import A4
-    from reportlab.lib.units import mm
-    REPORTLAB_AVAILABLE = True
-except Exception:
-    REPORTLAB_AVAILABLE = False
-    canvas = None
-    A4 = None
-    mm = None
-    logger.warning("reportlab not installed; PDF generation disabled")
-
 # -----------------------
 # Logging
 # -----------------------
@@ -88,6 +75,18 @@ try:
 except Exception:
     Image = None
     ImageTk = None
+
+try:
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+    REPORTLAB_AVAILABLE = True
+except Exception:
+    REPORTLAB_AVAILABLE = False
+    canvas = None
+    A4 = None
+    mm = None
+    logger.warning("reportlab not installed; PDF generation disabled")
 
 # -----------------------
 # Optional crypto & passlib & keyring
