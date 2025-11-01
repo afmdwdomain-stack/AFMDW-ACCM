@@ -39,6 +39,7 @@ import logging
 from datetime import datetime, date, timedelta
 from pathlib import Path
 from typing import Optional, Dict
+from email.message import EmailMessage
 
 # -----------------------
 # Logging
@@ -74,6 +75,15 @@ try:
 except Exception:
     Image = None
     ImageTk = None
+
+try:
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+except Exception:
+    canvas = None
+    A4 = None
+    mm = None
 
 # -----------------------
 # Optional crypto & passlib & keyring
@@ -761,6 +771,14 @@ class BookingManager:
             if progress_callback: progress_callback(f"Error: {e}")
             raise
 
+    def export_monthly_report(self, year: int, month: int):
+        """Stub for monthly report generation."""
+        output_path = os.path.join(REPORTS_DIR, f"report_{year}_{month:02d}.txt")
+        with open(output_path, "w") as f:
+            f.write(f"Monthly report for {year}-{month:02d}\n")
+            f.write("(Stub implementation)\n")
+        return output_path
+
 # -----------------------
 # Full GUI class methods (complete - not elided)
 # -----------------------
@@ -1206,7 +1224,72 @@ class AccommodationApp(tk.Tk):
             }
             self.booking_mgr.email_config = new_cfg; self.booking_mgr.persist()
             messagebox.showinfo("Email Settings", "Email settings saved"); dlg.destroy()
-        ttk.Button(dlg, text="Test connection", command=test_connection).grid(row=6, column=0, pady=10); ttk.Button(dlg, text="Save", command=save_cfg).grid(row=6, column=1, pady=10); dlg.grab_set()
+        def test_send():
+            # Prompt for recipient email
+            recipient = simpledialog.askstring("Test Send", "Enter recipient email address:", parent=dlg)
+            if not recipient or not recipient.strip():
+                return
+            recipient = recipient.strip()
+            # Create debug window
+            debug_win = tk.Toplevel(dlg); debug_win.title("Test Send - SMTP Debug")
+            debug_win.geometry("700x500")
+            ttk.Label(debug_win, text=f"Sending test email to: {recipient}").pack(anchor="w", padx=8, pady=(8,0))
+            status_var = tk.StringVar(value="Preparing...")
+            ttk.Label(debug_win, textvariable=status_var).pack(anchor="w", padx=8, pady=(4,0))
+            pb = ttk.Progressbar(debug_win, mode="indeterminate", length=660); pb.pack(padx=8, pady=8)
+            ttk.Label(debug_win, text="SMTP Debug Output:").pack(anchor="w", padx=8)
+            debug_text = tk.Text(debug_win, height=20, width=90, wrap="word"); debug_text.pack(padx=8, pady=(4,8), fill="both", expand=True)
+            # Save original config
+            original_config = self.booking_mgr.email_config
+            # Create temporary config with dialog values
+            temp_config = {
+                "incoming": {"host": in_host.get().strip(), "port": 993, "use_ssl": True, "protocol": "imap"},
+                "outgoing": {"host": out_host.get().strip(), "port": int(out_port.get()), "use_ssl": True, "auth_required": True},
+                "username": username_var.get().strip(),
+                "password": password_var.get(),
+                "use_same_credentials_for_outgoing": bool(use_same.get()),
+            }
+            def progress_callback(msg):
+                self.after(0, status_var.set, msg)
+                self.after(0, debug_text.insert, "end", f"{msg}\n")
+                self.after(0, debug_text.see, "end")
+            def send_thread():
+                try:
+                    pb.start(10)
+                    # Temporarily set the config
+                    self.booking_mgr.email_config = temp_config
+                    ok, debug_output = self.booking_mgr.send_email_with_attachment(
+                        recipient,
+                        "AFMDW Test Email",
+                        "This is a test email from AFMDW Accommodation Management Centre.\n\nIf you receive this, your email settings are working correctly.",
+                        attachments=None,
+                        progress_callback=progress_callback,
+                        debug_capture=True
+                    )
+                    if debug_output:
+                        self.after(0, debug_text.insert, "end", "\n=== SMTP Protocol Debug ===\n")
+                        self.after(0, debug_text.insert, "end", debug_output)
+                        self.after(0, debug_text.see, "end")
+                    self.after(0, status_var.set, "✓ Test email sent successfully!" if ok else "✗ Test email failed")
+                    self.after(0, debug_text.insert, "end", f"\n{'='*50}\n")
+                    self.after(0, debug_text.insert, "end", "✓ SUCCESS: Test email sent successfully!\n" if ok else "✗ FAILED: Test email failed\n")
+                    self.after(0, debug_text.see, "end")
+                except Exception as e:
+                    self.after(0, status_var.set, f"✗ Failed: {e}")
+                    self.after(0, debug_text.insert, "end", f"\n{'='*50}\n")
+                    self.after(0, debug_text.insert, "end", f"✗ ERROR: {e}\n")
+                    self.after(0, debug_text.see, "end")
+                finally:
+                    # Restore original config
+                    self.booking_mgr.email_config = original_config
+                    try: pb.stop()
+                    except Exception: pass
+            t = threading.Thread(target=send_thread, daemon=True); t.start()
+            def close_debug():
+                if t.is_alive(): messagebox.showwarning("Test Send", "Test email is still being sent; please wait."); return
+                debug_win.destroy()
+            ttk.Button(debug_win, text="Close", command=close_debug).pack(pady=6); debug_win.grab_set()
+        ttk.Button(dlg, text="Test connection", command=test_connection).grid(row=6, column=0, pady=10); ttk.Button(dlg, text="Test send", command=test_send).grid(row=6, column=1, pady=10); ttk.Button(dlg, text="Save", command=save_cfg).grid(row=6, column=2, pady=10); dlg.grab_set()
 
     def _export_monthly_report(self):
         sel = self.report_date_var.get()
