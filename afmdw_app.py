@@ -1194,6 +1194,46 @@ class AccommodationApp(tk.Tk):
             except Exception as e: smtp_msg = f"SMTP failed: {e}"
             if imap_ok and smtp_ok: messagebox.showinfo("Test connection", f"{imap_msg}\n{smtp_msg}")
             else: messagebox.showwarning("Test connection", f"{imap_msg}\n{smtp_msg}")
+        def test_send():
+            to_addr = simpledialog.askstring("Test send", "Enter destination email address:", parent=dlg)
+            if not to_addr or not to_addr.strip(): return
+            to_addr = to_addr.strip()
+            # Create modal debug window
+            test_win = tk.Toplevel(dlg); test_win.title("Test Send"); test_win.geometry("700x400")
+            test_win.transient(dlg); test_win.grab_set()
+            ttk.Label(test_win, text=f"Sending test email to: {to_addr}").pack(anchor="w", padx=8, pady=(8,0))
+            status_var = tk.StringVar(value="Preparing..."); ttk.Label(test_win, textvariable=status_var).pack(anchor="w", padx=8, pady=(4,0))
+            pb = ttk.Progressbar(test_win, mode="indeterminate", length=660); pb.pack(padx=8, pady=8)
+            debug_text = tk.Text(test_win, height=15, width=85); debug_text.pack(padx=8, pady=(4,8))
+            # Save original config and set temporary config
+            original_config = self.booking_mgr.email_config
+            temp_cfg = {
+                "incoming": {"host": in_host.get().strip(), "port": 993, "use_ssl": True, "protocol": "imap"},
+                "outgoing": {"host": out_host.get().strip(), "port": int(out_port.get()), "use_ssl": True, "auth_required": True},
+                "username": username_var.get().strip(),
+                "password": password_var.get(),
+                "use_same_credentials_for_outgoing": bool(use_same.get()),
+            }
+            self.booking_mgr.email_config = temp_cfg
+            def progress_callback(s): self.after(0, status_var.set, s); self.after(0, debug_text.insert, "end", f"{s}\n")
+            def send_thread():
+                try:
+                    pb.start(10)
+                    ok, debug = self.booking_mgr.send_email_with_attachment(to_addr, "AFMDW Test Email", "This is a test email from AFMDW Accommodation Management Centre.", attachments=[], progress_callback=progress_callback, debug_capture=True)
+                    if debug: self.after(0, debug_text.insert, "end", "\n--- SMTP Debug Output ---\n" + debug)
+                    self.after(0, status_var.set, "✓ Email sent successfully" if ok else "✗ Email failed")
+                except Exception as e:
+                    self.after(0, status_var.set, f"✗ Failed: {e}"); self.after(0, debug_text.insert, "end", f"\n--- Error ---\n{str(e)}\n")
+                finally:
+                    try: pb.stop()
+                    except Exception: pass
+                    # Restore original config
+                    self.booking_mgr.email_config = original_config
+            t = threading.Thread(target=send_thread, daemon=True); t.start()
+            def close_test():
+                if t.is_alive(): messagebox.showwarning("Sending", "Email is still being sent; please wait."); return
+                test_win.destroy()
+            ttk.Button(test_win, text="Close", command=close_test).pack(pady=6)
         def save_cfg():
             pwd = password_var.get()
             rec = set_smtp_password_record(username_var.get().strip(), pwd)
@@ -1206,7 +1246,7 @@ class AccommodationApp(tk.Tk):
             }
             self.booking_mgr.email_config = new_cfg; self.booking_mgr.persist()
             messagebox.showinfo("Email Settings", "Email settings saved"); dlg.destroy()
-        ttk.Button(dlg, text="Test connection", command=test_connection).grid(row=6, column=0, pady=10); ttk.Button(dlg, text="Save", command=save_cfg).grid(row=6, column=1, pady=10); dlg.grab_set()
+        ttk.Button(dlg, text="Test connection", command=test_connection).grid(row=6, column=0, pady=10, sticky="e", padx=6); ttk.Button(dlg, text="Test send", command=test_send).grid(row=6, column=1, pady=10, sticky="w"); ttk.Button(dlg, text="Save", command=save_cfg).grid(row=6, column=1, pady=10, sticky="e"); dlg.grab_set()
 
     def _export_monthly_report(self):
         sel = self.report_date_var.get()
