@@ -1238,7 +1238,10 @@ class AccommodationApp(tk.Tk):
             close_btn.pack(pady=8)
             # Progress callback to append messages to text widget
             def progress_callback(msg):
-                self.after(0, lambda: debug_text.insert("end", f"{msg}\n") or debug_text.see("end"))
+                def update():
+                    debug_text.insert("end", f"{msg}\n")
+                    debug_text.see("end")
+                self.after(0, update)
             # Save original config and create temporary config
             original_config = self.booking_mgr.email_config
             temp_config = {
@@ -1266,11 +1269,13 @@ class AccommodationApp(tk.Tk):
                         debug_capture=True
                     )
                     # Append debug output
-                    if debug_output:
-                        self.after(0, lambda: debug_text.insert("end", "\n=== SMTP Debug Output ===\n"))
-                        self.after(0, lambda: debug_text.insert("end", debug_output))
-                        self.after(0, lambda: debug_text.insert("end", "\n=== End Debug Output ===\n"))
-                    self.after(0, lambda: debug_text.insert("end", "\n✓ Email sent successfully!\n"))
+                    def show_result():
+                        if debug_output:
+                            debug_text.insert("end", "\n=== SMTP Debug Output ===\n")
+                            debug_text.insert("end", debug_output)
+                            debug_text.insert("end", "\n=== End Debug Output ===\n")
+                        debug_text.insert("end", "\n✓ Email sent successfully!\n")
+                    self.after(0, show_result)
                 except Exception as e:
                     self.after(0, lambda: debug_text.insert("end", f"\n✗ Error: {e}\n"))
                     logger.exception("Test send failed")
@@ -1281,7 +1286,10 @@ class AccommodationApp(tk.Tk):
                     self.after(0, lambda: close_btn.config(state="normal"))
             t = threading.Thread(target=send_thread, daemon=True)
             t.start()
-        ttk.Button(dlg, text="Test connection", command=test_connection).grid(row=6, column=0, pady=10); ttk.Button(dlg, text="Test send", command=do_test_send).grid(row=6, column=1, pady=10); ttk.Button(dlg, text="Save", command=save_cfg).grid(row=6, column=2, pady=10); dlg.grab_set()
+        ttk.Button(dlg, text="Test connection", command=test_connection).grid(row=6, column=0, pady=10)
+        ttk.Button(dlg, text="Test send", command=do_test_send).grid(row=6, column=1, pady=10)
+        ttk.Button(dlg, text="Save", command=save_cfg).grid(row=6, column=2, pady=10)
+        dlg.grab_set()
 
     def _export_monthly_report(self):
         sel = self.report_date_var.get()
