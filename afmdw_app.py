@@ -1223,9 +1223,11 @@ class AccommodationApp(tk.Tk):
             close_btn.pack(pady=6)
             
             def progress_callback(msg):
-                self.after(0, status_var.set, msg)
-                self.after(0, debug_text.insert, "end", f"{msg}\n")
-                self.after(0, debug_text.see, "end")
+                def update_ui():
+                    status_var.set(msg)
+                    debug_text.insert("end", f"{msg}\n")
+                    debug_text.see("end")
+                self.after(0, update_ui)
             
             def send_thread():
                 # Save current config
@@ -1259,19 +1261,25 @@ class AccommodationApp(tk.Tk):
                     
                     # Display debug output
                     if debug_output:
-                        self.after(0, debug_text.insert, "end", "\n--- SMTP Debug Output ---\n")
-                        self.after(0, debug_text.insert, "end", debug_output)
-                        self.after(0, debug_text.see, "end")
+                        def show_debug():
+                            debug_text.insert("end", "\n--- SMTP Debug Output ---\n")
+                            debug_text.insert("end", debug_output)
+                            debug_text.see("end")
+                        self.after(0, show_debug)
                     
-                    self.after(0, status_var.set, "✓ Test email sent successfully")
-                    self.after(0, debug_text.insert, "end", "\n✓ SUCCESS: Test email sent successfully\n")
-                    self.after(0, debug_text.see, "end")
+                    def show_success():
+                        status_var.set("✓ Test email sent successfully")
+                        debug_text.insert("end", "\n✓ SUCCESS: Test email sent successfully\n")
+                        debug_text.see("end")
+                    self.after(0, show_success)
                     
                 except Exception as e:
                     error_msg = f"✗ Error: {str(e)}"
-                    self.after(0, status_var.set, error_msg)
-                    self.after(0, debug_text.insert, "end", f"\n{error_msg}\n")
-                    self.after(0, debug_text.see, "end")
+                    def show_error():
+                        status_var.set(error_msg)
+                        debug_text.insert("end", f"\n{error_msg}\n")
+                        debug_text.see("end")
+                    self.after(0, show_error)
                     logger.exception("Test send failed")
                 
                 finally:
@@ -1306,7 +1314,10 @@ class AccommodationApp(tk.Tk):
             }
             self.booking_mgr.email_config = new_cfg; self.booking_mgr.persist()
             messagebox.showinfo("Email Settings", "Email settings saved"); dlg.destroy()
-        ttk.Button(dlg, text="Test connection", command=test_connection).grid(row=6, column=0, pady=10); ttk.Button(dlg, text="Save", command=save_cfg).grid(row=6, column=1, pady=10); ttk.Button(dlg, text="Test send", command=test_send).grid(row=6, column=2, pady=10); dlg.grab_set()
+        ttk.Button(dlg, text="Test connection", command=test_connection).grid(row=6, column=0, pady=10)
+        ttk.Button(dlg, text="Save", command=save_cfg).grid(row=6, column=1, pady=10)
+        ttk.Button(dlg, text="Test send", command=test_send).grid(row=6, column=2, pady=10)
+        dlg.grab_set()
 
     def _export_monthly_report(self):
         sel = self.report_date_var.get()
