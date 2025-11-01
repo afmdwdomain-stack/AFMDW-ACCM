@@ -1208,13 +1208,13 @@ class AccommodationApp(tk.Tk):
             self.booking_mgr.email_config = new_cfg; self.booking_mgr.persist()
             messagebox.showinfo("Email Settings", "Email settings saved"); dlg.destroy()
         def do_test_send():
-            self._do_test_send(username_var, password_var, out_host, out_port)
+            self._do_test_send(username_var, password_var, in_host, out_host, out_port)
         ttk.Button(dlg, text="Test connection", command=test_connection).grid(row=6, column=0, pady=10)
         ttk.Button(dlg, text="Test send", command=do_test_send).grid(row=6, column=1, pady=10)
         ttk.Button(dlg, text="Save", command=save_cfg).grid(row=6, column=2, pady=10)
         dlg.grab_set()
 
-    def _do_test_send(self, username_var, password_var, smtp_host_var, smtp_port_var):
+    def _do_test_send(self, username_var, password_var, imap_host_var, smtp_host_var, smtp_port_var):
         """Handle test send button - prompts for destination and sends test email with debug output."""
         # Ask for destination email
         dest_email = simpledialog.askstring("Test Send", "Enter destination email address:", parent=self)
@@ -1267,17 +1267,18 @@ class AccommodationApp(tk.Tk):
             original_config = self.booking_mgr.email_config
             
             try:
-                # Start progress bar
-                progress_bar.start(10)
+                # Start progress bar (thread-safe)
+                self.after(0, progress_bar.start, 10)
                 
                 # Build temporary config from dialog values
                 username = username_var.get().strip()
                 password = password_var.get()
+                imap_host = imap_host_var.get().strip()
                 smtp_host = smtp_host_var.get().strip()
                 smtp_port = int(smtp_port_var.get())
                 
                 temp_config = {
-                    "incoming": {"host": "mail.afmdw.co.za", "port": 993, "use_ssl": True, "protocol": "imap"},
+                    "incoming": {"host": imap_host, "port": 993, "use_ssl": True, "protocol": "imap"},
                     "outgoing": {"host": smtp_host, "port": smtp_port, "use_ssl": True, "auth_required": True},
                     "username": username,
                     "password": password,
