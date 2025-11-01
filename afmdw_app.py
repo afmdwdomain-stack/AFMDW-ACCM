@@ -39,6 +39,7 @@ import logging
 from datetime import datetime, date, timedelta
 from pathlib import Path
 from typing import Optional, Dict
+from email.message import EmailMessage
 
 # -----------------------
 # Logging
@@ -1206,7 +1207,139 @@ class AccommodationApp(tk.Tk):
             }
             self.booking_mgr.email_config = new_cfg; self.booking_mgr.persist()
             messagebox.showinfo("Email Settings", "Email settings saved"); dlg.destroy()
-        ttk.Button(dlg, text="Test connection", command=test_connection).grid(row=6, column=0, pady=10); ttk.Button(dlg, text="Save", command=save_cfg).grid(row=6, column=1, pady=10); dlg.grab_set()
+        def do_test_send():
+            self._do_test_send(username_var, password_var, out_host, out_port)
+        ttk.Button(dlg, text="Test connection", command=test_connection).grid(row=6, column=0, pady=10)
+        ttk.Button(dlg, text="Test send", command=do_test_send).grid(row=6, column=1, pady=10)
+        ttk.Button(dlg, text="Save", command=save_cfg).grid(row=6, column=2, pady=10)
+        dlg.grab_set()
+
+    def _do_test_send(self, username_var, password_var, smtp_host_var, smtp_port_var):
+        """Handle test send button - prompts for destination and sends test email with debug output."""
+        # Ask for destination email
+        dest_email = simpledialog.askstring("Test Send", "Enter destination email address:", parent=self)
+        if not dest_email or not dest_email.strip():
+            return
+        dest_email = dest_email.strip()
+        
+        # Create debug window
+        debug_win = tk.Toplevel(self)
+        debug_win.title("Test Send - SMTP Debug")
+        debug_win.geometry("700x500")
+        debug_win.transient(self)
+        debug_win.grab_set()
+        
+        # Add progress label
+        status_label = ttk.Label(debug_win, text="Initializing...")
+        status_label.pack(anchor="w", padx=10, pady=(10, 5))
+        
+        # Add progress bar
+        progress_bar = ttk.Progressbar(debug_win, mode="indeterminate", length=680)
+        progress_bar.pack(padx=10, pady=5)
+        
+        # Add text widget for debug output
+        debug_frame = ttk.Frame(debug_win)
+        debug_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        debug_text = tk.Text(debug_frame, wrap="word", height=20, width=80)
+        scrollbar = ttk.Scrollbar(debug_frame, orient="vertical", command=debug_text.yview)
+        debug_text.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side="right", fill="y")
+        debug_text.pack(side="left", fill="both", expand=True)
+        
+        # Add close button (initially disabled)
+        close_btn = ttk.Button(debug_win, text="Close", command=debug_win.destroy, state="disabled")
+        close_btn.pack(pady=(5, 10))
+        
+        def append_debug_text(text):
+            """Thread-safe append to debug text widget."""
+            def _append():
+                debug_text.insert("end", text + "\n")
+                debug_text.see("end")
+            self.after(0, _append)
+        
+        def update_status(text):
+            """Thread-safe status update."""
+            self.after(0, status_label.config, {"text": text})
+        
+        def send_thread():
+            """Background thread to send test email."""
+            # Save original config
+            original_config = self.booking_mgr.email_config
+            
+            try:
+                # Start progress bar
+                progress_bar.start(10)
+                
+                # Build temporary config from dialog values
+                username = username_var.get().strip()
+                password = password_var.get()
+                smtp_host = smtp_host_var.get().strip()
+                smtp_port = int(smtp_port_var.get())
+                
+                temp_config = {
+                    "incoming": {"host": "mail.afmdw.co.za", "port": 993, "use_ssl": True, "protocol": "imap"},
+                    "outgoing": {"host": smtp_host, "port": smtp_port, "use_ssl": True, "auth_required": True},
+                    "username": username,
+                    "password": password,
+                    "use_same_credentials_for_outgoing": True,
+                }
+                
+                # Temporarily set the email config
+                self.booking_mgr.email_config = temp_config
+                
+                append_debug_text(f"=== Test Send to {dest_email} ===")
+                append_debug_text(f"SMTP Server: {smtp_host}:{smtp_port}")
+                append_debug_text(f"Username: {username}")
+                append_debug_text("")
+                
+                # Define progress callback
+                def progress_callback(msg):
+                    append_debug_text(f"[PROGRESS] {msg}")
+                    update_status(msg)
+                
+                # Send test email
+                subject = "AFMDW Test Email"
+                body = "This is a test email from AFMDW Accommodation Management Centre.\n\nIf you received this, your email settings are configured correctly."
+                
+                ok, debug_output = self.booking_mgr.send_email_with_attachment(
+                    dest_email, 
+                    subject, 
+                    body, 
+                    attachments=[], 
+                    cc=None, 
+                    bcc=None, 
+                    progress_callback=progress_callback,
+                    debug_capture=True
+                )
+                
+                # Append SMTP debug output
+                if debug_output:
+                    append_debug_text("")
+                    append_debug_text("=== SMTP Debug Output ===")
+                    append_debug_text(debug_output)
+                
+                append_debug_text("")
+                append_debug_text("=== Result: SUCCESS ===")
+                update_status("✓ Test email sent successfully!")
+                
+            except Exception as e:
+                append_debug_text("")
+                append_debug_text(f"=== Result: FAILED ===")
+                append_debug_text(f"Error: {str(e)}")
+                update_status(f"✗ Failed: {str(e)}")
+                logger.exception("Test send failed")
+            
+            finally:
+                # Restore original config
+                self.booking_mgr.email_config = original_config
+                
+                # Stop progress bar and enable close button
+                self.after(0, progress_bar.stop)
+                self.after(0, close_btn.config, {"state": "normal"})
+        
+        # Start background thread
+        thread = threading.Thread(target=send_thread, daemon=True)
+        thread.start()
 
     def _export_monthly_report(self):
         sel = self.report_date_var.get()
