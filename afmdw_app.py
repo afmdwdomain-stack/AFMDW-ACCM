@@ -39,6 +39,7 @@ import logging
 from datetime import datetime, date, timedelta
 from pathlib import Path
 from typing import Optional, Dict
+from email.message import EmailMessage
 
 # -----------------------
 # Logging
@@ -74,6 +75,18 @@ try:
 except Exception:
     Image = None
     ImageTk = None
+
+try:
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+    REPORTLAB_AVAILABLE = True
+except Exception:
+    REPORTLAB_AVAILABLE = False
+    canvas = None
+    A4 = None
+    mm = None
+    logger.warning("reportlab not installed; PDF generation disabled")
 
 # -----------------------
 # Optional crypto & passlib & keyring
@@ -1172,7 +1185,7 @@ class AccommodationApp(tk.Tk):
 
     def _show_email_settings(self):
         cfg = self.booking_mgr.email_config or DEFAULT_EMAIL_CONFIG
-        dlg = tk.Toplevel(self); dlg.title("Email Settings"); dlg.geometry("560x380")
+        dlg = tk.Toplevel(self); dlg.title("Email Settings"); dlg.geometry("560x420")
         ttk.Label(dlg, text="Incoming IMAP host").grid(row=0, column=0, sticky="e", padx=6, pady=6)
         in_host = tk.StringVar(value=cfg.get("incoming", {}).get("host", "mail.afmdw.co.za")); ttk.Entry(dlg, textvariable=in_host, width=36).grid(row=0, column=1, padx=6, pady=6)
         ttk.Label(dlg, text="Username").grid(row=1, column=0, sticky="e", padx=6, pady=6); username_var = tk.StringVar(value=cfg.get("username", "domainadmin@afmdw.co.za")); ttk.Entry(dlg, textvariable=username_var, width=36).grid(row=1, column=1, padx=6, pady=6)
@@ -1194,6 +1207,92 @@ class AccommodationApp(tk.Tk):
             except Exception as e: smtp_msg = f"SMTP failed: {e}"
             if imap_ok and smtp_ok: messagebox.showinfo("Test connection", f"{imap_msg}\n{smtp_msg}")
             else: messagebox.showwarning("Test connection", f"{imap_msg}\n{smtp_msg}")
+        def do_test_send():
+            dest = simpledialog.askstring("Test send", "Enter destination email address:", parent=dlg)
+            if not dest or not dest.strip():
+                return
+            dest = dest.strip()
+            # Build temporary config from current form values
+            pwd = password_var.get()
+            temp_cfg = {
+                "incoming": {"host": in_host.get().strip(), "port": 993, "use_ssl": True, "protocol": "imap"},
+                "outgoing": {"host": out_host.get().strip(), "port": int(out_port.get()), "use_ssl": True, "auth_required": True},
+                "username": username_var.get().strip(),
+                "password": pwd,
+                "use_same_credentials_for_outgoing": bool(use_same.get()),
+            }
+            # Create debug window
+            debug_win = tk.Toplevel(dlg)
+            debug_win.title("Test Send - SMTP Debug")
+            debug_win.geometry("700x500")
+            debug_win.transient(dlg)
+            debug_win.grab_set()
+            ttk.Label(debug_win, text=f"Sending test email to: {dest}").pack(anchor="w", padx=8, pady=8)
+            status_var = tk.StringVar(value="Initializing...")
+            ttk.Label(debug_win, textvariable=status_var, font=("Courier", 10)).pack(anchor="w", padx=8, pady=(0, 4))
+            pb = ttk.Progressbar(debug_win, mode="indeterminate", length=680)
+            pb.pack(padx=8, pady=8)
+            pb.start(10)
+            ttk.Label(debug_win, text="SMTP Debug Output:").pack(anchor="w", padx=8, pady=(8, 0))
+            debug_text = tk.Text(debug_win, wrap="word", height=20, width=85, font=("Courier", 9))
+            debug_text.pack(fill="both", expand=True, padx=8, pady=8)
+            scroll = ttk.Scrollbar(debug_text, command=debug_text.yview)
+            debug_text.config(yscrollcommand=scroll.set)
+            
+            def append_debug(msg):
+                self.after(0, lambda: debug_text.insert("end", msg + "\n"))
+                self.after(0, lambda: debug_text.see("end"))
+            
+            def progress_callback(s):
+                self.after(0, status_var.set, s)
+                append_debug(f"[{datetime.utcnow().strftime('%H:%M:%S')}] {s}")
+            
+            # Save original config and apply temporary config
+            original_cfg = self.booking_mgr.email_config
+            self.booking_mgr.email_config = temp_cfg
+            
+            def send_thread():
+                try:
+                    ok, debug_output = self.booking_mgr.send_email_with_attachment(
+                        dest,
+                        "AFMDW Test Email",
+                        "This is a test email from AFMDW Accommodation Management Centre.\n\nIf you receive this, your SMTP settings are working correctly.",
+                        attachments=[],
+                        cc=None,
+                        bcc=None,
+                        progress_callback=progress_callback,
+                        debug_capture=True
+                    )
+                    if debug_output:
+                        append_debug("\n--- SMTP Debug Output ---")
+                        append_debug(debug_output)
+                        append_debug("--- End Debug Output ---\n")
+                    self.after(0, status_var.set, "✓ Email sent successfully!" if ok else "✗ Email send failed")
+                except Exception as e:
+                    append_debug(f"\n!!! Exception occurred !!!")
+                    append_debug(f"{type(e).__name__}: {str(e)}")
+                    import traceback
+                    append_debug(traceback.format_exc())
+                    self.after(0, status_var.set, f"✗ Error: {e}")
+                finally:
+                    # Restore original config
+                    self.booking_mgr.email_config = original_cfg
+                    try:
+                        pb.stop()
+                    except Exception:
+                        pass
+            
+            t = threading.Thread(target=send_thread, daemon=True)
+            t.start()
+            
+            def close_debug():
+                if t.is_alive():
+                    messagebox.showwarning("Test Send", "Email is still being sent; please wait.", parent=debug_win)
+                    return
+                debug_win.destroy()
+            
+            ttk.Button(debug_win, text="Close", command=close_debug).pack(pady=6)
+        
         def save_cfg():
             pwd = password_var.get()
             rec = set_smtp_password_record(username_var.get().strip(), pwd)
@@ -1206,7 +1305,10 @@ class AccommodationApp(tk.Tk):
             }
             self.booking_mgr.email_config = new_cfg; self.booking_mgr.persist()
             messagebox.showinfo("Email Settings", "Email settings saved"); dlg.destroy()
-        ttk.Button(dlg, text="Test connection", command=test_connection).grid(row=6, column=0, pady=10); ttk.Button(dlg, text="Save", command=save_cfg).grid(row=6, column=1, pady=10); dlg.grab_set()
+        ttk.Button(dlg, text="Test connection", command=test_connection).grid(row=6, column=0, pady=10)
+        ttk.Button(dlg, text="Test send", command=do_test_send).grid(row=6, column=1, pady=10)
+        ttk.Button(dlg, text="Save", command=save_cfg).grid(row=6, column=2, pady=10)
+        dlg.grab_set()
 
     def _export_monthly_report(self):
         sel = self.report_date_var.get()
