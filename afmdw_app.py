@@ -1229,10 +1229,11 @@ class AccommodationApp(tk.Tk):
                     except Exception: pass
                     # Restore original config
                     self.booking_mgr.email_config = original_config
-            t = threading.Thread(target=send_thread, daemon=True); t.start()
+            t = threading.Thread(target=send_thread, daemon=True)
             def close_test():
                 if t.is_alive(): messagebox.showwarning("Sending", "Email is still being sent; please wait."); return
                 test_win.destroy()
+            t.start()
             ttk.Button(test_win, text="Close", command=close_test).pack(pady=6)
         def save_cfg():
             pwd = password_var.get()
@@ -1246,7 +1247,7 @@ class AccommodationApp(tk.Tk):
             }
             self.booking_mgr.email_config = new_cfg; self.booking_mgr.persist()
             messagebox.showinfo("Email Settings", "Email settings saved"); dlg.destroy()
-        ttk.Button(dlg, text="Test connection", command=test_connection).grid(row=6, column=0, pady=10, sticky="e", padx=6); ttk.Button(dlg, text="Test send", command=test_send).grid(row=6, column=1, pady=10, sticky="w"); ttk.Button(dlg, text="Save", command=save_cfg).grid(row=6, column=1, pady=10, sticky="e"); dlg.grab_set()
+        ttk.Button(dlg, text="Test connection", command=test_connection).grid(row=6, column=0, pady=10); ttk.Button(dlg, text="Test send", command=test_send).grid(row=6, column=1, pady=10); ttk.Button(dlg, text="Save", command=save_cfg).grid(row=6, column=2, pady=10); dlg.grab_set()
 
     def _export_monthly_report(self):
         sel = self.report_date_var.get()
