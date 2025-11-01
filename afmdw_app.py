@@ -1215,7 +1215,7 @@ class AccommodationApp(tk.Tk):
                 "use_same_credentials_for_outgoing": bool(use_same.get()),
             }
             self.booking_mgr.email_config = temp_cfg
-            def progress_callback(s): self.after(0, status_var.set, s); self.after(0, debug_text.insert, "end", f"{s}\n")
+            def progress_callback(s): self.after(0, status_var.set, s)
             def send_thread():
                 try:
                     pb.start(10)
